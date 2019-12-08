@@ -1,0 +1,404 @@
+---
+title: "MA678_Midterm"
+author: "Xinci Chen"
+date: "11/7/2019"
+output: html_document
+---
+
+```{r,warning=FALSE}
+pacman::p_load(jsonlite,tidyr,dplyr,kableExtra,lme4,merTools,ggplot2,MASS,plotly,ggmap,car,psych)
+```
+
+
+#import
+#https://blog.exploratory.io/working-with-json-data-in-very-simple-way-ad7ebcc0bb89
+```{r}
+yelp_business <- stream_in(file("business.json"),verbose= F)
+yelp_business <- flatten(yelp_business)
+yelp_business <- as_tibble(yelp_business)
+
+yelp_business2 <- yelp_business %>%
+  dplyr::filter(grepl('Restaurants', categories)) %>% 
+  filter(is_open==1) 
+
+table1 <- yelp_business2 %>% 
+  group_by(city) %>%
+  summarise(no_rows = length(city)) %>% 
+  arrange(desc(no_rows)) %>% 
+  slice(1:10) 
+
+kable(table1,col.names = c("City", "Frequency")) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),full_width = F)
+
+citylist <- c('Toronto','Las Vegas','Montréal','Phoenix','Calgary','Charlotte','Pittsburgh','Mississauga','Cleveland','Scottsdale')
+
+yelp_business2 <- yelp_business %>%
+  filter(city %in% citylist)
+
+#unique(yelp_business2$city)
+
+na_percent <- yelp_business2 %>%
+  summarize_all(funs(sum(is.na(.)) / length(.))) 
+
+
+yelp_business3 <- yelp_business2 %>%
+  dplyr::select(-c(attributes.RestaurantsTableService,attributes.BusinessAcceptsBitcoin,attributes.ByAppointmentOnly,attributes.AcceptsInsurance,attributes.Music,attributes.GoodForDancing,attributes.CoatCheck,attributes.HappyHour,attributes.BestNights,attributes.WheelchairAccessible,attributes.DogsAllowed,attributes.BYOBCorkage,attributes.DriveThru,attributes.Smoking,attributes.AgesAllowed,attributes.HairSpecializesIn,attributes.Corkage,attributes.BYOB,attributes.DietaryRestrictions,attributes.Open24Hours,attributes.RestaurantsCounterService))%>% 
+  dplyr::select(-starts_with("hours."))
+
+yelp_business3[yelp_business3 == "None"] <- NA
+```
+
+```{r}
+attributeslist<- yelp_business3 %>% 
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.GoodForMeal,attributes.BusinessParking,attributes.Caters,attributes.NoiseLevel,attributes.RestaurantsTakeOut,attributes.RestaurantsPriceRange2,attributes.OutdoorSeating,attributes.BikeParking,attributes.Ambience,attributes.HasTV,attributes.WiFi,attributes.Alcohol,attributes.RestaurantsAttire,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+#lapply(attributeslist, unique)
+
+yelp_business3 <- yelp_business3 %>%
+  dplyr::select(-c(attributes.GoodForMeal,attributes.BusinessParking,attributes.NoiseLevel,attributes.Ambience,attributes.WiFi,attributes.Alcohol,attributes.RestaurantsAttire))
+
+function1 <- function(arg1) {
+  arg1 [arg1 == "True"] <- 1
+  arg1 [arg1 == "False"] <- 0
+  arg1 <- as.factor(arg1)
+}
+
+yelp_business3$city <- as.factor(yelp_business3$city)
+
+yelp_business3$attributes.GoodForKids <- function1(yelp_business3$attributes.GoodForKids)
+
+yelp_business3$attributes.RestaurantsReservations <- function1(yelp_business3$attributes.RestaurantsReservations)
+
+yelp_business3$attributes.Caters <- function1(yelp_business3$attributes.Caters)
+
+yelp_business3$attributes.RestaurantsTakeOut <- function1(yelp_business3$attributes.RestaurantsTakeOut)
+
+yelp_business3$attributes.RestaurantsPriceRange2 <- as.factor(yelp_business3$attributes.RestaurantsPriceRange2)
+
+yelp_business3$attributes.OutdoorSeating <- function1(yelp_business3$attributes.OutdoorSeating)
+
+yelp_business3$attributes.BikeParking <- function1(yelp_business3$attributes.BikeParking)
+
+yelp_business3$attributes.HasTV  <- function1(yelp_business3$attributes.HasTV )
+
+yelp_business3$attributes.RestaurantsGoodForGroups <- function1(yelp_business3$attributes.RestaurantsGoodForGroups)
+
+yelp_business3$attributes.RestaurantsDelivery  <- function1(yelp_business3$attributes.RestaurantsDelivery)
+
+yelp_business3$attributes.BusinessAcceptsCreditCards <- function1(yelp_business3$attributes.BusinessAcceptsCreditCards)
+
+attributeslist2<- yelp_business3 %>% 
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.Caters,attributes.RestaurantsTakeOut,attributes.OutdoorSeating,attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+#lapply(attributeslist2, unique)
+
+```
+
+```{r}
+register_google(key = "AIzaSyCOl-qPVqBDFAqzpxEMs_9fBj7LaW77Bqc", write = TRUE)
+
+yelp_business_map <- yelp_business3 %>%
+  filter(city %in% "Las Vegas")
+
+LV <- get_map("Las Vegas, Nevada",maptype="road",zoom = 12)
+ggmap(LV) + 
+  geom_point(data=yelp_business_map, aes(x=longitude, y=latitude),shape = ".")
+```
+
+
+```{r}
+startable <- yelp_business3%>%
+  group_by(stars) %>%
+  summarise(Frequency = n()) %>% 
+  mutate(Percent = Frequency / sum(Frequency) * 100)
+
+kable(startable) %>%
+  kable_styling(full_width = F)
+
+ggplot(startable,aes(x=stars,y=Frequency))+
+  geom_bar(width=0.5,color="black", fill="grey",stat = "identity")+
+  geom_text(aes(label = Frequency),vjust=-0.5, color="Black", size=3.5)+
+  theme_minimal()
+
+ggplot(yelp_business3,aes(as.factor(stars)))+
+  geom_bar(position="identity")+
+  facet_grid(.~city)+
+  theme_minimal()
+
+ggplot(yelp_business3,aes(attributes.GoodForKids,fill=as.factor(stars)))+
+  geom_bar(position="identity")+
+  facet_grid(.~city)+
+  theme_minimal()
+```
+
+
+```{r}
+fit1 <- lm(stars ~attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsTakeOut+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating+attributes.BikeParking+attributes.HasTV+attributes.RestaurantsGoodForGroups+attributes.RestaurantsDelivery+attributes.BusinessAcceptsCreditCards, data=yelp_business3)
+summary(fit1)
+par(mfrow=c(2,2))
+plot(fit1)
+car::vif(fit1)
+
+attributeslist3 <- yelp_business3 %>%
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.Caters,attributes.RestaurantsTakeOut,attributes.RestaurantsPriceRange2,attributes.OutdoorSeating,attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+pairs.panels(attributeslist3, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+
+x <- round(cor(attributeslist3, use = "pair"), 2) 
+
+car::vif(fit4)
+
+yelp_business4 <- yelp_business3 %>%
+  dplyr::select(-c(attributes.RestaurantsTakeOut,attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+fit2 <- lm(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating, data=yelp_business4)
+summary(fit2)
+
+#Treat rating stars as the continuous variable
+#Multilevel linear regression:fixed effect
+#Consider the city data as varying intercept and then fit the model
+
+fit3 <- lmer(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsTakeOut+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating+attributes.BikeParking+attributes.HasTV+attributes.RestaurantsGoodForGroups+attributes.RestaurantsDelivery+attributes.BusinessAcceptsCreditCards + (1 | city),data=yelp_business3)
+summary(fit3)
+AIC(fit3)
+plotFEsim(FEsim(fit3))
+
+fit4 <- lmer(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating + (1 | city), data=yelp_business4)
+summary(fit4)
+plotFEsim(FEsim(fit4))
+
+AIC(fit3,fit4)
+```
+
+```{r}
+```{r,echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+pacman::p_load(jsonlite,tidyr,dplyr,kableExtra,lme4,merTools,ggplot2,MASS,plotly,ggmap,car,psych,brms)
+```
+
+Introduction
+----------
+
+I chose the Yelp Data Challenge as my Midterm Project. Yelp is a restaurant rating App which is highly used in the United States nowadays. It is very interesting to get a touch and explore the dataset provided by Yelp. My research question is how different attributes can influence the restaurant’s rating stars within ten cities. 
+
+Data Cleaning
+----------
+
+The Yelp data challenge provides the Contestants six datasets in the JSON file, some of which are extremely big. The dataset I will be using is called “business”, the content which is in line with my research question. The data contains about over 190000 observations and 58 variables. The variables including “business_id”, “name”, “address”, “city”, “categories”, “latitude”, “longitude”, different attributes of the stores such as “attributes.good for kids”, “attributes.RestaurantReservations” etc. 
+The first thing is to list out which ten cities that have the most store records in the Yelp business data set. These cities are Toronto, Las Vegas, Montréal, Phoenix, Calgary, Charlotte, Pittsburgh, Mississauga, Cleveland and Scottsdale. Note here that the cities are not restricted to the cities in the United States. I also filter the stores that are not restaurants. It is not hard to find that there are a lot of missing values in some attributes. I remove the attributes which have over 50% missing values. 
+The outcome variable is stars, which is the rating of restaurants. The predictor variables are attributes so far are the ones I filtered out from the data cleaning process.
+
+```{r,warning=F}
+yelp_business <- stream_in(file("business.json"),verbose= F)
+yelp_business <- flatten(yelp_business)
+yelp_business <- as_tibble(yelp_business)
+
+yelp_business2 <- yelp_business %>%
+  dplyr::filter(grepl('Restaurants', categories)) %>% 
+  filter(is_open==1) 
+
+table1 <- yelp_business2 %>% 
+  group_by(city) %>%
+  summarise(no_rows = length(city)) %>% 
+  arrange(desc(no_rows)) %>% 
+  slice(1:10) 
+```
+
+Exploratory Data Analysis
+----------
+For exploratory data analysis, I generated some tables and plots which are related to my research question.
+The following table shows the top ten cities that have the most restaurants in this business file.
+```{r}
+kable(table1,col.names = c("Cities", "Frequency")) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),full_width = F)
+
+citylist <- c('Toronto','Las Vegas','Montréal','Phoenix','Calgary','Charlotte','Pittsburgh','Mississauga','Cleveland','Scottsdale')
+
+yelp_business2 <- yelp_business %>%
+  filter(city %in% citylist)
+
+#unique(yelp_business2$city)
+
+na_percent <- yelp_business2 %>%
+  summarize_all(funs(sum(is.na(.)) / length(.))) 
+
+yelp_business3 <- yelp_business2 %>%
+  dplyr::select(-c(attributes.RestaurantsTableService,attributes.BusinessAcceptsBitcoin,attributes.ByAppointmentOnly,attributes.AcceptsInsurance,attributes.Music,attributes.GoodForDancing,attributes.CoatCheck,attributes.HappyHour,attributes.BestNights,attributes.WheelchairAccessible,attributes.DogsAllowed,attributes.BYOBCorkage,attributes.DriveThru,attributes.Smoking,attributes.AgesAllowed,attributes.HairSpecializesIn,attributes.Corkage,attributes.BYOB,attributes.DietaryRestrictions,attributes.Open24Hours,attributes.RestaurantsCounterService))%>% 
+  dplyr::select(-starts_with("hours."))
+
+yelp_business3[yelp_business3 == "None"] <- NA
+
+attributeslist<- yelp_business3 %>% 
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.GoodForMeal,attributes.BusinessParking,attributes.Caters,attributes.NoiseLevel,attributes.RestaurantsTakeOut,attributes.RestaurantsPriceRange2,attributes.OutdoorSeating,attributes.BikeParking,attributes.Ambience,attributes.HasTV,attributes.WiFi,attributes.Alcohol,attributes.RestaurantsAttire,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+#lapply(attributeslist, unique)
+
+yelp_business3 <- yelp_business3 %>%
+  dplyr::select(-c(attributes.GoodForMeal,attributes.BusinessParking,attributes.NoiseLevel,attributes.Ambience,attributes.WiFi,attributes.Alcohol,attributes.RestaurantsAttire))
+
+function1 <- function(arg1) {
+  arg1 [arg1 == "True"] <- 1
+  arg1 [arg1 == "False"] <- 0
+  arg1 <- as.factor(arg1)
+}
+
+yelp_business3$city <- as.factor(yelp_business3$city)
+
+yelp_business3$attributes.GoodForKids <- function1(yelp_business3$attributes.GoodForKids)
+
+yelp_business3$attributes.RestaurantsReservations <- function1(yelp_business3$attributes.RestaurantsReservations)
+
+yelp_business3$attributes.Caters <- function1(yelp_business3$attributes.Caters)
+
+yelp_business3$attributes.RestaurantsTakeOut <- function1(yelp_business3$attributes.RestaurantsTakeOut)
+
+yelp_business3$attributes.RestaurantsPriceRange2 <- as.factor(yelp_business3$attributes.RestaurantsPriceRange2)
+
+yelp_business3$attributes.OutdoorSeating <- function1(yelp_business3$attributes.OutdoorSeating)
+
+yelp_business3$attributes.BikeParking <- function1(yelp_business3$attributes.BikeParking)
+
+yelp_business3$attributes.HasTV  <- function1(yelp_business3$attributes.HasTV )
+
+yelp_business3$attributes.RestaurantsGoodForGroups <- function1(yelp_business3$attributes.RestaurantsGoodForGroups)
+
+yelp_business3$attributes.RestaurantsDelivery  <- function1(yelp_business3$attributes.RestaurantsDelivery)
+
+yelp_business3$attributes.BusinessAcceptsCreditCards <- function1(yelp_business3$attributes.BusinessAcceptsCreditCards)
+
+attributeslist2<- yelp_business3 %>% 
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.Caters,attributes.RestaurantsTakeOut,attributes.OutdoorSeating,attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+#lapply(attributeslist2, unique)
+```
+
+The following plot shows a map of all restaurants in Las Vegas. More maps of other cities are in the Appendix.
+```{r}
+register_google(key = "AIzaSyCOl-qPVqBDFAqzpxEMs_9fBj7LaW77Bqc", write = TRUE)
+
+yelp_business_map <- yelp_business3 %>%
+  filter(city %in% "Las Vegas")
+
+LV <- get_map("Las Vegas, Nevada",maptype="road",zoom = 12)
+ggmap(LV) + 
+  geom_point(data=yelp_business_map, aes(x=longitude, y=latitude),shape = ".")
+``` 
+
+The following table shows us the proportion of each restaurant rating stars. over 25 percent of people gave 4 stars.
+```{r}
+startable <- yelp_business3%>%
+  group_by(stars) %>%
+  summarise(Frequency = n()) %>% 
+  mutate(Percent = Frequency / sum(Frequency) * 100)
+
+kable(startable,col.names = c("Rating_Stars", "Frequency","Percent(%)")) %>%
+  kable_styling(full_width = F)
+```
+
+The following bar plot shows another way of seeing the distribution of the restaurant rating stars.
+```{r}
+ggplot(startable,aes(x=stars,y=Frequency))+
+  geom_bar(width=0.5,color="black", fill="grey",stat = "identity")+
+  geom_text(aes(label = Frequency),vjust=-0.5, color="Black", size=3.5)+
+  labs(x="Rating Stars")+
+  theme_minimal()
+```
+
+
+The following bar plot shows the distribution of the restaurant rating stars within each city level.
+```{r}
+ggplot(yelp_business3,aes(as.factor(stars)))+
+  geom_bar(position="identity")+
+  facet_grid(.~city)+
+  labs(x="Rating Stars Within Cities",y="Frequency")+
+  theme_minimal()
+```
+
+
+The following bar plot shows the rating stars in an attribute of whether the restaurants are good for kids. 0 means not good for kids. 1 means good for kids.
+
+```{r}
+ggplot(yelp_business3,aes(attributes.GoodForKids,fill=as.factor(stars)))+
+  geom_bar(position="identity")+
+  facet_grid(.~city)+
+  theme_minimal()
+```
+
+Method
+----------
+The first model I tried is a linear model with all the factors I picked up from data cleaning and EDA. It is not hard to tell that we do have a low R squared. 
+```{r}
+fit1 <- lm(stars ~attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsTakeOut+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating+attributes.BikeParking+attributes.HasTV+attributes.RestaurantsGoodForGroups+attributes.RestaurantsDelivery+attributes.BusinessAcceptsCreditCards, data=yelp_business3)
+display(fit1)
+par(mfrow=c(2,2))
+plot(fit1)
+```
+
+Use VIF check if there is multicollinearity between the variables. There seems no detection of multicollinearity between predictor variables.
+```{r}
+car::vif(fit1)
+```
+
+Another way to reduce our factor is to check the correlation matrix between outcome and predictors. The following variables, attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups and attributes.BusinessAcceptsCreditCards that have weak realtionship will be delete in second linear model.
+
+```{r}
+attributeslist3 <- yelp_business3 %>%
+  dplyr::select(c(attributes.GoodForKids,attributes.RestaurantsReservations,attributes.Caters,attributes.RestaurantsTakeOut,attributes.RestaurantsPriceRange2,attributes.OutdoorSeating,attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.RestaurantsDelivery,attributes.BusinessAcceptsCreditCards))
+
+pairs.panels(attributeslist3, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+R squared is still very low.
+```{r}
+yelp_business4 <- yelp_business3 %>%
+  dplyr::select(-c(attributes.BikeParking,attributes.HasTV,attributes.RestaurantsGoodForGroups,attributes.BusinessAcceptsCreditCards))
+
+fit2 <- lm(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating, data=yelp_business4)
+summary(fit2)
+```
+
+Multilevel Linear Model was used in here. What I did is treating outcome variables (Rating Stars) as a numeric variables. And the intercept is varing by city. The first multilevel model is all the factors I used in linear model 1.
+```{r}
+fit3 <- lmer(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsTakeOut+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating+attributes.BikeParking+attributes.HasTV+attributes.RestaurantsGoodForGroups+attributes.RestaurantsDelivery+attributes.BusinessAcceptsCreditCards + (1 | city),data=yelp_business3)
+summary(fit3)
+```
+
+AIC is 18753.22 as showing below.
+```{r}
+AIC(fit3)
+plotFEsim(FEsim(fit3))
+```
+
+The first multilevel model is using the reduced factors I used in linear model 2.
+```{r}
+fit4 <- lmer(stars ~ attributes.GoodForKids+attributes.RestaurantsReservations+attributes.Caters+attributes.RestaurantsPriceRange2+attributes.OutdoorSeating + (1 | city), data=yelp_business4)
+summary(fit4)
+plotFEsim(FEsim(fit4))
+AIC(fit3,fit4)
+```
+Results
+----------
+
+Based on the smaller AIC, the first model will be my final choice.
+```{r}
+coef(fit3)
+fixef(fit3)
+ranef(fit3)
+```
+```
+
+
+
+
+
+
